@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch AI Comment Extension (Debug)",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": [
+                // 修正路径：因为 launch.json 在 packages/extension 内，
+                // ${workspaceFolder} 即指向 extension 目录本身。
+                "--extensionDevelopmentPath=${workspaceFolder}"
+            ],
+            "runtimeExecutable": "${execPath}",
+            "outFiles": [
+                // 确保指向编译后的 JS 文件
+                "${workspaceFolder}/dist/**/*.js"
+            ],
+            // 确保在启动前运行 watch 任务，实现热重载
+            "preLaunchTask": "npm: watch" 
+        }
+    ]
+}

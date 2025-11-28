@@ -1,0 +1,110 @@
+{
+  "name": "vscode-ai-comment",
+  "displayName": "AI Comment Generator",
+  "description": "AI-powered comment generator for multiple languages (Java/Go/C/JS/TS etc.)",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": ["onStartupFinished", "onCommand:ai-comment.generateSelected", "onCommand:ai-comment.generateWholeFile"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ai-comment.generateSelected",
+        "title": "AI Comment: Generate for Selected Code"
+      },
+      {
+        "command": "ai-comment.generateWholeFile",
+        "title": "AI Comment: Generate for Whole File"
+      }
+    ],
+    "configuration": {
+      "title": "AI Comment Generator",
+      "type": "object",
+      "properties": {
+        "aiComment.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for AI service (e.g., OpenAI API Key)",
+          "scope": "application"
+        },
+        "aiComment.model": {
+          "type": "string",
+          "default": "gpt-3.5-turbo",
+          "enum": [
+            "gpt-3.5-turbo",
+            "gpt-4",
+            "gpt-4o"
+          ],
+          "description": "AI model to use for comment generation"
+        },
+        "aiComment.commentStyle": {
+          "type": "string",
+          "default": "default",
+          "enum": [
+            "default",
+            "javadoc",
+            "godoc",
+            "jsdoc",
+            "doxygen"
+          ],
+          "description": "Comment style for different languages"
+        },
+        "aiComment.commentMode": {
+          "type": "string",
+          "default": "concise",
+          "enum": ["concise", "detailed"],
+          "description": "注释生成模式：concise（简洁一句话）、detailed（详细注释）"
+        },
+        "aiComment.targetLanguage": {
+          "type": "string",
+          "default": "auto",
+          "description": "Target language (auto = detect from file, or specify: java/go/c/javascript etc.)"
+        },
+        "aiComment.aiProvider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "xunfei", "baidu", "qwen"],
+          "description": "AI service provider (openai/xunfei/baidu/qwen)"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "ai-comment.generateSelected",
+        "key": "ctrl+shift+/",
+        "mac": "cmd+shift+/",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run build",
+    "build": "tsc -p ./ --noEmitOnError false",
+    "watch": "tsc -watch -p ./",
+    "pretest": "pnpm run build && pnpm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "~18.19.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "@vscode/test-electron": "^2.3.4",
+    "eslint": "^8.49.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "vscode-ai-comment-shared": "workspace:*"
+  }
+}

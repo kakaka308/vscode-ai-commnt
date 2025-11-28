@@ -1,0 +1,24 @@
+{
+  "name": "vscode-ai-comment",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "pnpm -r build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.20.0",
+  "private": true,
+  "workspaces": [ 
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8",
+    "@types/vscode": "^1.106.1",
+    "@vscode/vsce": "^3.7.1",
+    "typescript": "^5.9.3"
+  }
+}

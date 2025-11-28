@@ -1,0 +1,59 @@
+// {
+//   "extends": "../../tsconfig.json",
+//   "compilerOptions": {
+//     "module": "CommonJS",       
+//     "target": "ES2020",         
+//     "outDir": "dist",           
+//     "lib": ["ES2020"],          
+//     "sourceMap": true,          
+//     "rootDir": "src",
+//     "strict": true,             
+//     "esModuleInterop": true,    
+//     "skipLibCheck": true,       
+//     "typeRoots": [             
+//       "./node_modules/@types",
+//       "../../node_modules/@types"
+//     ],
+//     "baseUrl": ".", 
+//     "paths": {      
+//       // 关键：改为你shared包的实际名称（而非@shared）
+//       // "vscode-ai-comment-shared": ["../shared/src"]
+//     }
+//   },
+//   "include": ["src/**/*"],      
+//   "exclude": ["node_modules", ".vscode-test"],
+//   "references": [ // 新增：声明依赖shared子包（核心解决TS6059）
+//     { "path": "../shared" }
+//   ]
+// }
+
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "target": "ES2020",
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    
+    // 1. 删除 rootDirs，它会导致编译器试图包含外部 src
+    // "rootDirs": ["src", "../shared/src"], <--- 删除这行
+
+    // 2. 修改 paths
+    // 如果想要引用编译后的 d.ts（推荐用于构建），请删除指向 src 的映射
+    // 或者，如果你使用了 Project References，可以保留，但必须配合 tsc --build
+    // ⚡️ 最简单的构建修复方案：删除 paths 对 shared 的映射，让它去读 node_modules
+    "paths": {
+       // "vscode-ai-comment-shared": ["../shared/src"] <--- 删除或注释掉这行
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"],
+  // 3. 保持引用，这对构建顺序有帮助
+  "references": [
+    { "path": "../shared" }
+  ]
+}
