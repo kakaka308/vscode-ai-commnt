@@ -1,7 +1,7 @@
 {
   "name": "vscode-ai-comment",
   "displayName": "AI Comment Generator",
-  "description": "AI-powered comment generator for multiple languages (Java/Go/C/JS/TS etc.)",
+  "description": "AI-powered comment generator for multiple languages",
   "version": "0.1.0",
   "engines": {
     "vscode": "^1.80.0"
@@ -9,7 +9,12 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onStartupFinished", "onCommand:ai-comment.generateSelected", "onCommand:ai-comment.generateWholeFile"],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:ai-comment.generateSelected",
+    "onCommand:ai-comment.generateWholeFile",
+    "onCommand:ai-comment.openConfig"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -20,58 +25,30 @@
       {
         "command": "ai-comment.generateWholeFile",
         "title": "AI Comment: Generate for Whole File"
+      },
+      {
+        "command": "ai-comment.openConfig",
+        "title": "AI Comment: Settings"
       }
     ],
-    "configuration": {
-      "title": "AI Comment Generator",
-      "type": "object",
-      "properties": {
-        "aiComment.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API Key for AI service (e.g., OpenAI API Key)",
-          "scope": "application"
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ai-comment.generateSelected",
+          "group": "ai-comment",
+          "when": "editorHasSelection"
         },
-        "aiComment.model": {
-          "type": "string",
-          "default": "gpt-3.5-turbo",
-          "enum": [
-            "gpt-3.5-turbo",
-            "gpt-4",
-            "gpt-4o"
-          ],
-          "description": "AI model to use for comment generation"
+        {
+          "command": "ai-comment.generateWholeFile",
+          "group": "ai-comment",
+          "when": "resourceLangId"
         },
-        "aiComment.commentStyle": {
-          "type": "string",
-          "default": "default",
-          "enum": [
-            "default",
-            "javadoc",
-            "godoc",
-            "jsdoc",
-            "doxygen"
-          ],
-          "description": "Comment style for different languages"
-        },
-        "aiComment.commentMode": {
-          "type": "string",
-          "default": "concise",
-          "enum": ["concise", "detailed"],
-          "description": "注释生成模式：concise（简洁一句话）、detailed（详细注释）"
-        },
-        "aiComment.targetLanguage": {
-          "type": "string",
-          "default": "auto",
-          "description": "Target language (auto = detect from file, or specify: java/go/c/javascript etc.)"
-        },
-        "aiComment.aiProvider": {
-          "type": "string",
-          "default": "openai",
-          "enum": ["openai", "xunfei", "baidu", "qwen"],
-          "description": "AI service provider (openai/xunfei/baidu/qwen)"
+        {
+          "command": "ai-comment.openConfig",
+          "group": "ai-comment",
+          "when": "resourceLangId"
         }
-      }
+      ]
     },
     "keybindings": [
       {
@@ -79,13 +56,48 @@
         "key": "ctrl+shift+/",
         "mac": "cmd+shift+/",
         "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "ai-comment.generateWholeFile",
+        "key": "ctrl+alt+/",
+        "mac": "cmd+alt+/",
+        "when": "editorTextFocus"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "AI Comment Generator",
+      "type": "object",
+      "properties": {
+        "aiComment.apiKey": { "type": "string", "description": "Default/OpenAI API Key" },
+        "aiComment.model": { "type": "string", "default": "gpt-3.5-turbo", "description": "Default Model" },
+        "aiComment.commentStyle": { "type": "string", "default": "default", "description": "Comment Style" },
+        "aiComment.commentMode": { "type": "string", "default": "concise", "description": "Comment Mode" },
+        "aiComment.targetLanguage": { "type": "string", "default": "auto", "description": "Target Language" },
+        "aiComment.aiProvider": { "type": "string", "default": "openai", "description": "AI Provider" },
+        
+        "aiComment.openaiApiKey": { "type": "string", "description": "OpenAI API Key" },
+        "aiComment.openaiModel": { "type": "string", "default": "gpt-3.5-turbo" },
+        "aiComment.openaiEndpoint": { "type": "string" },
+        
+        "aiComment.qwenApiKey": { "type": "string", "description": "Qwen API Key" },
+        "aiComment.qwenModel": { "type": "string", "default": "qwen-turbo" },
+        "aiComment.qwenEndpoint": { "type": "string" },
+        
+        "aiComment.baiduApiKey": { "type": "string" },
+        "aiComment.baiduSecretKey": { "type": "string" },
+        "aiComment.baiduModel": { "type": "string", "default": "ernie-4.0" },
+        
+        "aiComment.xunfeiAppId": { "type": "string" },
+        "aiComment.xunfeiApiKey": { "type": "string" },
+        "aiComment.xunfeiApiSecret": { "type": "string" }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run build",
-    "build": "tsc -p ./ --noEmitOnError false",
+    "build": "tsc -p ./ && pnpm run copy-ui",
     "watch": "tsc -watch -p ./",
+    "copy-ui": "node -e \"const fs=require('fs'); const path=require('path'); const src=path.join('..','ui','dist'); const dest=path.join('dist','ui'); try { fs.rmSync(dest, {recursive:true, force:true}); fs.mkdirSync(dest, {recursive:true}); fs.cpSync(src, dest, {recursive:true}); console.log('UI assets copied successfully.'); } catch(e) { console.error('Copy failed:', e); process.exit(1); }\"",
     "pretest": "pnpm run build && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
