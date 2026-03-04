@@ -1,64 +1,83 @@
-import * as vscode from 'vscode';
-import { AIServiceProvider } from '../api/types';
-
-let panel: vscode.WebviewPanel | undefined;
-
-export function openConfigPanel(context: vscode.ExtensionContext) {
-  if (panel) {
-    panel.reveal(vscode.ViewColumn.One);
-    return;
-  }
-
-  panel = vscode.window.createWebviewPanel(
-    'aiCommentConfig',
-    'AI Comment 设置',
-    vscode.ViewColumn.One,
-    { enableScripts: true }
-  );
-
-  panel.webview.html = getWebviewContent();
-
-  // 接收前端消息（保存配置）
-  panel.webview.onDidReceiveMessage(
-    async (message) => {
-      if (message.command === 'saveConfig') {
-        const config = vscode.workspace.getConfiguration('aiComment');
-        for (const key of Object.keys(message.data)) {
-          await config.update(key, message.data[key], vscode.ConfigurationTarget.Global);
-        }
-        vscode.window.showInformationMessage('AI Comment: 配置已保存！');
-      }
-    },
-    undefined,
-    context.subscriptions
-  );
-
-  panel.onDidDispose(() => { panel = undefined; }, null, context.subscriptions);
-
-  // 推送当前配置到 Webview
-  const config = vscode.workspace.getConfiguration('aiComment');
-  panel.webview.postMessage({
-    command: 'loadConfig',
-    data: {
-      apiKey: config.get('apiKey', ''),
-      model: config.get('model', 'gpt-3.5-turbo'),
-      commentStyle: config.get('commentStyle', 'default'),
-      targetLanguage: config.get('targetLanguage', 'auto'),
-      aiProvider: config.get('aiProvider', AIServiceProvider.OpenAI),
-      commentMode: config.get('commentMode', 'concise'),
-      openaiEndpoint: config.get('openaiEndpoint', 'https://api.openai.com/v1/chat/completions'),
-      qwenApiKey: config.get('qwenApiKey', ''),
-      qwenModel: config.get('qwenModel', 'qwen-turbo'),
-      qwenEndpoint: config.get('qwenEndpoint', 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'),
-      baiduApiKey: config.get('baiduApiKey', ''),
-      baiduSecretKey: config.get('baiduSecretKey', ''),
-      baiduModel: config.get('baiduModel', 'ernie-4.0'),
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
     }
-  });
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.openConfigPanel = openConfigPanel;
+const vscode = __importStar(require("vscode"));
+const types_1 = require("../api/types");
+let panel;
+function openConfigPanel(context) {
+    if (panel) {
+        panel.reveal(vscode.ViewColumn.One);
+        return;
+    }
+    panel = vscode.window.createWebviewPanel('aiCommentConfig', 'AI Comment 设置', vscode.ViewColumn.One, { enableScripts: true });
+    panel.webview.html = getWebviewContent();
+    // 接收前端消息（保存配置）
+    panel.webview.onDidReceiveMessage(async (message) => {
+        if (message.command === 'saveConfig') {
+            const config = vscode.workspace.getConfiguration('aiComment');
+            for (const key of Object.keys(message.data)) {
+                await config.update(key, message.data[key], vscode.ConfigurationTarget.Global);
+            }
+            vscode.window.showInformationMessage('AI Comment: 配置已保存！');
+        }
+    }, undefined, context.subscriptions);
+    panel.onDidDispose(() => { panel = undefined; }, null, context.subscriptions);
+    // 推送当前配置到 Webview
+    const config = vscode.workspace.getConfiguration('aiComment');
+    panel.webview.postMessage({
+        command: 'loadConfig',
+        data: {
+            apiKey: config.get('apiKey', ''),
+            model: config.get('model', 'gpt-3.5-turbo'),
+            commentStyle: config.get('commentStyle', 'default'),
+            targetLanguage: config.get('targetLanguage', 'auto'),
+            aiProvider: config.get('aiProvider', types_1.AIServiceProvider.OpenAI),
+            commentMode: config.get('commentMode', 'concise'),
+            openaiEndpoint: config.get('openaiEndpoint', 'https://api.openai.com/v1/chat/completions'),
+            qwenApiKey: config.get('qwenApiKey', ''),
+            qwenModel: config.get('qwenModel', 'qwen-turbo'),
+            qwenEndpoint: config.get('qwenEndpoint', 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'),
+            baiduApiKey: config.get('baiduApiKey', ''),
+            baiduSecretKey: config.get('baiduSecretKey', ''),
+            baiduModel: config.get('baiduModel', 'ernie-4.0'),
+        }
+    });
 }
-
-function getWebviewContent(): string {
-  return `<!DOCTYPE html>
+function getWebviewContent() {
+    return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8"/>

@@ -1,18 +1,1 @@
-# 忽略依赖
-node_modules/
-
-# 忽略构建产物
-dist/
-out/
-build/
-
-# 忽略 VS Code 插件生成的测试文件
-.vscode-test/
-
-# 忽略临时文件
-*.log
-*.tsbuildinfo
-.DS_Store
-
-# 忽略环境配置 (包含敏感 key)
-.env
+node_modules

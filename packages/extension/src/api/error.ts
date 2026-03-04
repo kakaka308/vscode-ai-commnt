@@ -16,11 +16,11 @@ export class APIKeyMissingError extends AIError {
   }
 }
 
-// 接口请求失败错误
+// 接口请求失败错误（修复：不再拼接"AI 请求失败："前缀，避免重复）
 export class AIRequestFailedError extends AIError {
   statusCode?: number;
   constructor(message: string, statusCode?: number) {
-    super(`AI 请求失败：${message}`, 'REQUEST_FAILED');
+    super(message, 'REQUEST_FAILED');
     this.name = 'AIRequestFailedError';
     this.statusCode = statusCode;
   }
@@ -33,3 +33,25 @@ export class AIResponseParseError extends AIError {
     this.name = 'AIResponseParseError';
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
