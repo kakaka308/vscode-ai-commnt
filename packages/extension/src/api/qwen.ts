@@ -2,7 +2,12 @@ import axios, { AxiosError } from 'axios';
 import { GenerateCommentParams, AIResponse } from './types';
 import { AIRequestFailedError, AIResponseParseError, AIError } from './error';
 import { getExtensionConfig } from '../config/config';
-import { getDefaultStyleByLanguage, generateConciseComment } from 'vscode-ai-comment-shared';
+import {
+  buildPrompt,
+  generateConciseComment,
+  cleanDetailedResponse,
+  cleanConciseResponse,
+} from 'shared';
 
 export async function generateCommentWithQwen(params: GenerateCommentParams): Promise<AIResponse> {
   const config = getExtensionConfig();
@@ -14,24 +19,16 @@ export async function generateCommentWithQwen(params: GenerateCommentParams): Pr
 
   const { code, language, commentStyle, isWholeFile } = params;
 
-  if (!code || !code.trim()) {
-    throw new AIError('代码内容为空，无法生成注释');
-  }
+  if (!code?.trim()) throw new AIError('代码内容为空，无法生成注释');
 
-  const actualDetailedStyle = commentStyle === 'default' ? getDefaultStyleByLanguage(language) : commentStyle;
-
-  let userPrompt: string;
-
-  if (config.commentMode === 'concise') {
-    userPrompt = `你是代码总结专家。请用中文简要总结代码功能（一句话，不超过50字）。不要返回任何代码或额外解释。\n\n代码(${language}):\n${code}`;
-  } else {
-    userPrompt = `你是代码注释生成器，请遵循以下规则：\n1. 语言: ${language}\n2. 风格: ${actualDetailedStyle}\n3. 仅返回包含详细注释的代码片段，不要用Markdown包裹，不要解释。\n\n为以下代码生成注释:\n${code}`;
-  }
-
-  console.log('[Qwen Debug] model:', model);
-  console.log('[Qwen Debug] endpoint:', endpoint);
-  console.log('[Qwen Debug] prompt length:', userPrompt.length);
-  console.log('[Qwen Debug] prompt preview:', userPrompt.slice(0, 200));
+  const { system, user } = buildPrompt(
+    config.commentMode,
+    language,
+    code,
+    commentStyle,
+    isWholeFile ?? false
+  );
+  const userPrompt = `${system}\n\n${user}`;
 
   try {
     const response = await axios.post(
@@ -59,10 +56,11 @@ export async function generateCommentWithQwen(params: GenerateCommentParams): Pr
       throw new AIResponseParseError();
     }
 
-    const rawContent = data.choices[0].message.content;
+    const rawContent: string = data.choices[0].message.content;
+
     const comment = config.commentMode === 'concise'
-      ? generateConciseComment(rawContent, isWholeFile, language)
-      : rawContent.replace(/^```[\w]*\n?|```$/g, '');
+      ? generateConciseComment(cleanConciseResponse(rawContent), isWholeFile ?? false, language)
+      : cleanDetailedResponse(rawContent);
 
     return { success: true, comment };
 
@@ -71,31 +69,8 @@ export async function generateCommentWithQwen(params: GenerateCommentParams): Pr
     if (error instanceof AxiosError) {
       const detail = error.response?.data?.message || error.response?.data?.error?.message || error.message;
       const status = error.response?.status ?? 0;
-      console.error('[Qwen Debug] full error response:', JSON.stringify(error.response?.data));
       throw new AIRequestFailedError(`[${status}] ${detail}`, status);
     }
     throw new AIError(`Qwen API Error: ${(error as Error).message}`);
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

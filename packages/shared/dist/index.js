@@ -15,3 +15,5 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./comment-style/commentTemplates"), exports);
+__exportStar(require("./prompt/buildPrompt"), exports);
+__exportStar(require("./utils/cleanResponse"), exports);

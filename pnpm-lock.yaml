@@ -26,7 +26,7 @@ importers:
       axios:
         specifier: ^1.5.0
         version: 1.13.2
-      vscode-ai-comment-shared:
+      shared:
         specifier: workspace:*
         version: link:../shared
     devDependencies:

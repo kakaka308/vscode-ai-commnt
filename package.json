@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "pnpm -r build"
+    "shared": "pnpm --filter shared build",
+  "ui": "pnpm --filter ui build",
+  "extension": "pnpm --filter extension build",
+  "build": "pnpm shared && pnpm ui && pnpm extension"
   },
   "keywords": [],
   "author": "",

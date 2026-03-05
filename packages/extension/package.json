@@ -1,5 +1,5 @@
 {
-  "name": "vscode-ai-comment",
+  "name": "extension",
   "displayName": "AI Comment Generator",
   "description": "AI-powered comment generator for multiple languages",
   "version": "0.1.0",
@@ -68,36 +68,96 @@
       "title": "AI Comment Generator",
       "type": "object",
       "properties": {
-        "aiComment.apiKey": { "type": "string", "description": "Default/OpenAI API Key" },
-        "aiComment.model": { "type": "string", "default": "gpt-3.5-turbo", "description": "Default Model" },
-        "aiComment.commentStyle": { "type": "string", "default": "default", "description": "Comment Style" },
-        "aiComment.commentMode": { "type": "string", "default": "concise", "description": "Comment Mode" },
-        "aiComment.targetLanguage": { "type": "string", "default": "auto", "description": "Target Language" },
-        "aiComment.aiProvider": { "type": "string", "default": "openai", "description": "AI Provider" },
-        
-        "aiComment.openaiApiKey": { "type": "string", "description": "OpenAI API Key" },
-        "aiComment.openaiModel": { "type": "string", "default": "gpt-3.5-turbo" },
-        "aiComment.openaiEndpoint": { "type": "string" },
-        
-        "aiComment.qwenApiKey": { "type": "string", "description": "Qwen API Key" },
-        "aiComment.qwenModel": { "type": "string", "default": "qwen-turbo" },
-        "aiComment.qwenEndpoint": { "type": "string" },
-        
-        "aiComment.baiduApiKey": { "type": "string" },
-        "aiComment.baiduSecretKey": { "type": "string" },
-        "aiComment.baiduModel": { "type": "string", "default": "ernie-4.0" },
-        
-        "aiComment.xunfeiAppId": { "type": "string" },
-        "aiComment.xunfeiApiKey": { "type": "string" },
-        "aiComment.xunfeiApiSecret": { "type": "string" }
+        "aiComment.apiKey": {
+          "type": "string",
+          "description": "OpenAI API Key",
+          "order": 1
+        },
+        "aiComment.model": {
+          "type": "string",
+          "default": "gpt-3.5-turbo",
+          "description": "OpenAI 模型名称",
+          "order": 2
+        },
+        "aiComment.openaiEndpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1/chat/completions",
+          "description": "OpenAI Endpoint（代理地址可在此修改）",
+          "order": 3
+        },
+        "aiComment.aiProvider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "qwen", "baidu"],
+          "enumDescriptions": ["OpenAI", "通义千问", "文心一言"],
+          "description": "AI 服务商",
+          "order": 4
+        },
+        "aiComment.commentMode": {
+          "type": "string",
+          "default": "concise",
+          "enum": ["concise", "detailed"],
+          "enumDescriptions": ["简洁模式：一句话总结", "详细模式：完整注释块"],
+          "description": "注释模式",
+          "order": 5
+        },
+        "aiComment.commentStyle": {
+          "type": "string",
+          "default": "default",
+          "enum": ["default", "javadoc", "jsdoc", "godoc", "doxygen", "docstring"],
+          "description": "注释风格（default 为根据语言自动选择）",
+          "order": 6
+        },
+        "aiComment.targetLanguage": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "java", "javascript", "typescript", "python", "go", "cpp", "c"],
+          "description": "目标语言（auto 为自动检测）",
+          "order": 7
+        },
+        "aiComment.qwenApiKey": {
+          "type": "string",
+          "description": "通义千问 API Key",
+          "order": 8
+        },
+        "aiComment.qwenModel": {
+          "type": "string",
+          "default": "qwen-turbo",
+          "enum": ["qwen-turbo", "qwen-plus", "qwen-max", "qwen-long"],
+          "description": "通义千问模型",
+          "order": 9
+        },
+        "aiComment.qwenEndpoint": {
+          "type": "string",
+          "default": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+          "description": "通义千问 Endpoint",
+          "order": 10
+        },
+        "aiComment.baiduApiKey": {
+          "type": "string",
+          "description": "文心一言 API Key",
+          "order": 11
+        },
+        "aiComment.baiduSecretKey": {
+          "type": "string",
+          "description": "文心一言 Secret Key",
+          "order": 12
+        },
+        "aiComment.baiduModel": {
+          "type": "string",
+          "default": "ernie-4.0",
+          "enum": ["ernie-4.0", "ernie-3.5", "ernie-lite"],
+          "description": "文心一言模型",
+          "order": 13
+        }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run build",
-    "build": "tsc -p ./ && pnpm run copy-ui",
+    "build": "tsc -p ./ && pnpm run copy:ui",
+    "copy:ui": "node -e \"const fs=require('fs');fs.cpSync('../ui/dist','./ui-dist',{recursive:true})\"",
     "watch": "tsc -watch -p ./",
-    "copy-ui": "node -e \"const fs=require('fs'); const path=require('path'); const src=path.join('..','ui','dist'); const dest=path.join('dist','ui'); try { fs.rmSync(dest, {recursive:true, force:true}); fs.mkdirSync(dest, {recursive:true}); fs.cpSync(src, dest, {recursive:true}); console.log('UI assets copied successfully.'); } catch(e) { console.error('Copy failed:', e); process.exit(1); }\"",
     "pretest": "pnpm run build && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
@@ -117,6 +177,6 @@
   },
   "dependencies": {
     "axios": "^1.5.0",
-    "vscode-ai-comment-shared": "workspace:*"
+    "shared": "workspace:*"
   }
 }

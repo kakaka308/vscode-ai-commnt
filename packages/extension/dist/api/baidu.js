@@ -7,10 +7,9 @@ exports.generateCommentWithBaidu = generateCommentWithBaidu;
 const axios_1 = __importDefault(require("axios"));
 const error_1 = require("./error");
 const config_1 = require("../config/config");
-const vscode_ai_comment_shared_1 = require("vscode-ai-comment-shared");
+const shared_1 = require("shared");
 let cachedToken = null;
 let tokenExpiresTime = 0;
-// 获取 Access Token
 async function getAccessToken(apiKey, secretKey) {
     if (cachedToken && Date.now() < tokenExpiresTime) {
         return cachedToken;
@@ -21,7 +20,7 @@ async function getAccessToken(apiKey, secretKey) {
         throw new error_1.AIError(`Baidu Auth Failed: ${response.data.error_description}`);
     }
     cachedToken = response.data.access_token;
-    tokenExpiresTime = Date.now() + (response.data.expires_in - 60) * 1000; // 提前60秒过期
+    tokenExpiresTime = Date.now() + (response.data.expires_in - 60) * 1000;
     return cachedToken;
 }
 async function generateCommentWithBaidu(params) {
@@ -31,25 +30,17 @@ async function generateCommentWithBaidu(params) {
     if (!apiKey || !secretKey)
         throw new error_1.AIError('未配置 Baidu API Key 或 Secret Key');
     const accessToken = await getAccessToken(apiKey, secretKey);
-    // 映射模型到 Endpoint
-    // ernie-4.0-8k-latest 对应 compeletions_pro (示例)
-    // 实际需根据官方文档维护映射，这里简化处理
-    let endpoint = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions'; // Ernie-Lite-8K
+    let endpoint = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions';
     if (config.baiduModel?.includes('4.0')) {
         endpoint = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions_pro';
     }
     const { code, language, commentStyle, isWholeFile } = params;
-    const actualDetailedStyle = commentStyle === 'default' ? (0, vscode_ai_comment_shared_1.getDefaultStyleByLanguage)(language) : commentStyle;
-    let prompt = '';
-    if (config.commentMode === 'concise') {
-        prompt = `请用中文一句话总结以下${language}代码的功能，不要返回代码，不要有多余解释：\n${code}`;
-    }
-    else {
-        prompt = `请为以下${language}代码生成${actualDetailedStyle}风格的详细注释。直接返回带注释的代码，不要使用Markdown格式：\n${code}`;
-    }
+    // 统一使用 shared 的 buildPrompt，合并 system+user（文心一言同样不推荐 system role）
+    const { system, user } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
+    const userPrompt = `${system}\n\n${user}`;
     try {
         const response = await axios_1.default.post(`${endpoint}?access_token=${accessToken}`, {
-            messages: [{ role: 'user', content: prompt }],
+            messages: [{ role: 'user', content: userPrompt }],
             temperature: 0.1
         }, { headers: { 'Content-Type': 'application/json' } });
         const data = response.data;
@@ -58,8 +49,8 @@ async function generateCommentWithBaidu(params) {
         }
         const rawContent = data.result;
         const comment = config.commentMode === 'concise'
-            ? (0, vscode_ai_comment_shared_1.generateConciseComment)(rawContent, isWholeFile, language)
-            : rawContent.replace(/^```[\w]*\n?|```$/g, '');
+            ? (0, shared_1.generateConciseComment)((0, shared_1.cleanConciseResponse)(rawContent), isWholeFile ?? false, language)
+            : (0, shared_1.cleanDetailedResponse)(rawContent);
         return { success: true, comment };
     }
     catch (error) {
