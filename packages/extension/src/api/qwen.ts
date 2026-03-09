@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import { GenerateCommentParams, AIResponse } from './types';
+import { GenerateCommentParams, AIResponse, StreamChunkCallback } from './types';
 import { AIRequestFailedError, AIResponseParseError, AIError } from './error';
 import { getExtensionConfig } from '../config/config';
 import {
@@ -9,7 +9,10 @@ import {
   cleanConciseResponse,
 } from 'shared';
 
-export async function generateCommentWithQwen(params: GenerateCommentParams): Promise<AIResponse> {
+export async function generateCommentWithQwen(
+  params: GenerateCommentParams,
+  onChunk?: StreamChunkCallback
+): Promise<AIResponse> {
   const config = await getExtensionConfig();
   const apiKey = config.qwenApiKey;
   const model = config.qwenModel || 'qwen-turbo';
@@ -21,14 +24,17 @@ export async function generateCommentWithQwen(params: GenerateCommentParams): Pr
   if (!code?.trim()) throw new AIError('代码内容为空，无法生成注释');
 
   const { system, user } = buildPrompt(
-    config.commentMode,
-    language,
-    code,
-    commentStyle,
-    isWholeFile ?? false
+    config.commentMode, language, code, commentStyle, isWholeFile ?? false
   );
+  // Qwen 部分模型不支持 system role，合并为单条 user 消息
   const userPrompt = `${system}\n\n${user}`;
 
+  // 详细模式 + 有回调 → 流式
+  if (onChunk && config.commentMode === 'detailed') {
+    return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk);
+  }
+
+  // 普通请求
   try {
     const response = await axios.post(
       endpoint,
@@ -50,10 +56,10 @@ export async function generateCommentWithQwen(params: GenerateCommentParams): Pr
       throw new AIResponseParseError();
     }
 
-    const rawContent: string = data.choices[0].message.content;
+    const raw: string = data.choices[0].message.content;
     const comment = config.commentMode === 'concise'
-      ? generateConciseComment(cleanConciseResponse(rawContent), isWholeFile ?? false, language)
-      : cleanDetailedResponse(rawContent);
+      ? generateConciseComment(cleanConciseResponse(raw), isWholeFile ?? false, language)
+      : cleanDetailedResponse(raw);
 
     return { success: true, comment };
 
@@ -66,4 +72,72 @@ export async function generateCommentWithQwen(params: GenerateCommentParams): Pr
     }
     throw new AIError(`Qwen API Error: ${(error as Error).message}`);
   }
+}
+
+async function qwenStreamRequest(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  userPrompt: string,
+  onChunk: StreamChunkCallback
+): Promise<AIResponse> {
+  const response = await axios.post(
+    endpoint,
+    {
+      model,
+      messages: [{ role: 'user', content: userPrompt }],
+      stream: true
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      responseType: 'stream',
+      timeout: 60000
+    }
+  );
+
+  return new Promise((resolve, reject) => {
+    let fullText = '';
+    let buffer = '';
+
+    response.data.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+        const jsonStr = trimmed.slice(5).trim();
+        if (jsonStr === '[DONE]') {
+          resolve({ success: true, comment: fullText });
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          // Qwen 兼容 OpenAI 格式
+          const delta = parsed.choices?.[0]?.delta?.content ?? '';
+          if (delta) {
+            fullText += delta;
+            onChunk(delta);
+          }
+        } catch {
+          // 忽略解析失败的行
+        }
+      }
+    });
+
+    response.data.on('error', (err: Error) => {
+      reject(new AIError(`Qwen 流式请求失败: ${err.message}`));
+    });
+
+    response.data.on('end', () => {
+      if (fullText) resolve({ success: true, comment: fullText });
+      else reject(new AIError('Qwen 流式响应提前结束'));
+    });
+  });
 }

@@ -1,69 +1,109 @@
-import axios, { AxiosError } from 'axios';
-import { OpenAIRequest, GenerateCommentParams, AIResponse } from './types';
-import { APIKeyMissingError, AIRequestFailedError, AIResponseParseError, AIError } from './error';
+import axios from 'axios';
 import { getExtensionConfig } from '../config/config';
-import {
-  buildPrompt,
-  generateConciseComment,
-  cleanDetailedResponse,
-  cleanConciseResponse,
-} from 'shared';
+import { buildPrompt, cleanDetailedResponse,
+         cleanConciseResponse, generateConciseComment } from 'shared';
+import { APIKeyMissingError, AIRequestFailedError } from './error';
+import type { GenerateCommentParams, AIResponse, StreamChunkCallback } from './types';
 
-export async function generateCommentWithOpenAI(params: GenerateCommentParams): Promise<AIResponse> {
-  // getExtensionConfig 现在是 async
+export async function generateCommentWithOpenAI(
+  params: GenerateCommentParams,
+  onChunk?: StreamChunkCallback  // 有回调则流式，没有则普通
+): Promise<AIResponse> {
   const config = await getExtensionConfig();
   const apiKey = config.apiKey;
-  const model = config.model || 'gpt-3.5-turbo';
-  const endpoint = config.openaiEndpoint || 'https://api.openai.com/v1/chat/completions';
-
   if (!apiKey) throw new APIKeyMissingError();
 
   const { code, language, commentStyle, isWholeFile } = params;
-
-  const { system: systemPrompt, user: userPrompt } = buildPrompt(
-    config.commentMode,
-    language,
-    code,
-    commentStyle,
-    isWholeFile ?? false
+  const { system, user } = buildPrompt(
+    config.commentMode, language, code, commentStyle, isWholeFile ?? false
   );
 
-  const requestData: OpenAIRequest = {
-    model,
+  // 有 onChunk 回调才开启流式
+  if (onChunk && config.commentMode === 'detailed') {
+    return streamRequest(config.openaiEndpoint, apiKey, config.model, system, user, onChunk);
+  }
+
+  // 普通请求（简洁模式不需要流式，内容很短）
+  const response = await axios.post(config.openaiEndpoint, {
+    model: config.model,
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
+      { role: 'system', content: system },
+      { role: 'user', content: user }
     ],
     temperature: 0.2
-  };
+  }, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    timeout: 30000
+  });
 
-  try {
-    const response = await axios.post(endpoint, requestData, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
+  const raw: string = response.data.choices[0].message.content;
+  const comment = config.commentMode === 'concise'
+    ? generateConciseComment(cleanConciseResponse(raw), isWholeFile ?? false, language)
+    : cleanDetailedResponse(raw);
+
+  return { success: true, comment };
+}
+
+async function streamRequest(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  system: string,
+  user: string,
+  onChunk: StreamChunkCallback
+): Promise<AIResponse> {
+  const response = await axios.post(endpoint, {
+    model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ],
+    stream: true,   // 开启流式
+    temperature: 0.2
+  }, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    responseType: 'stream',  // axios 用 stream 模式接收
+    timeout: 60000
+  });
+
+  return new Promise((resolve, reject) => {
+    let fullText = '';
+    let buffer = '';
+
+    response.data.on('data', (chunk: Buffer) => {
+      // SSE 数据格式：每行 "data: {...}\n\n"
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';  // 最后一行可能不完整，留到下次
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+        const jsonStr = trimmed.slice(5).trim();
+        if (jsonStr === '[DONE]') {
+          resolve({ success: true, comment: fullText });
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const delta = parsed.choices?.[0]?.delta?.content ?? '';
+          if (delta) {
+            fullText += delta;
+            onChunk(delta);  // 每收到一段就回调
+          }
+        } catch {
+          // 忽略解析失败的行
+        }
+      }
     });
 
-    const data = response.data;
-    if (!data?.choices?.[0]?.message?.content) {
-      throw new AIResponseParseError();
-    }
-
-    const rawContent: string = data.choices[0].message.content;
-    const comment = config.commentMode === 'concise'
-      ? generateConciseComment(cleanConciseResponse(rawContent), isWholeFile ?? false, language)
-      : cleanDetailedResponse(rawContent);
-
-    return { comment, success: true };
-
-  } catch (error) {
-    if (error instanceof AxiosError) {
-      const message = error.response?.data?.error?.message || error.message;
-      throw new AIRequestFailedError(message, error.response?.status);
-    }
-    if (error instanceof AIError) throw error;
-    throw new AIError(`未知错误：${(error as Error).message}`);
-  }
+    response.data.on('error', reject);
+    response.data.on('end', () => {
+      // 防止没有收到 [DONE] 就结束
+      if (fullText) resolve({ success: true, comment: fullText });
+      else reject(new Error('流式响应提前结束'));
+    });
+  });
 }

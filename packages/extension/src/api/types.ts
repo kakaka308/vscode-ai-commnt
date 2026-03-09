@@ -32,3 +32,5 @@ export interface OpenAIRequest {
   temperature?: number;  // 随机性（0-1，越小越固定）
 }
 
+// 流式回调，每收到一段文字就触发
+export type StreamChunkCallback = (chunk: string) => void
