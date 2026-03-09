@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",       // 扩大到整个包根目录，覆盖 src 和 __tests__
+    "noEmit": true,       // 测试不需要输出产物
+    "composite": false,   // noEmit 时 composite 必须关闭
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*", "__tests__/**/*"]
+}
