@@ -10,10 +10,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:ai-comment.generateSelected",
-    "onCommand:ai-comment.generateWholeFile",
-    "onCommand:ai-comment.openConfig"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {

@@ -2,15 +2,24 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
-  // 关键修改：添加 'as any' 绕过类型检查错误
-  plugins: [vue() as any],
-  base: './',
+  plugins: [
+    vue() as any,
+    // 构建时把资源路径替换为占位符，Extension 加载时再替换为真实 URI
+    {
+      name: 'webview-base-placeholder',
+      transformIndexHtml(html) {
+        return html
+          .replace(/src="\/assets\//g, 'src="__WEBVIEW_BASE__/assets/')
+          .replace(/href="\/assets\//g, 'href="__WEBVIEW_BASE__/assets/')
+      }
+    }
+  ],
+  base: '/',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        // 保持原来的输出文件名配置，去掉哈希
         entryFileNames: 'assets/[name].js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name].[ext]'

@@ -24,7 +24,7 @@ async function getAccessToken(apiKey, secretKey) {
     return cachedToken;
 }
 async function generateCommentWithBaidu(params) {
-    const config = (0, config_1.getExtensionConfig)();
+    const config = await (0, config_1.getExtensionConfig)();
     const apiKey = config.baiduApiKey;
     const secretKey = config.baiduSecretKey;
     if (!apiKey || !secretKey)
@@ -35,14 +35,10 @@ async function generateCommentWithBaidu(params) {
         endpoint = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions_pro';
     }
     const { code, language, commentStyle, isWholeFile } = params;
-    // 统一使用 shared 的 buildPrompt，合并 system+user（文心一言同样不推荐 system role）
     const { system, user } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
     const userPrompt = `${system}\n\n${user}`;
     try {
-        const response = await axios_1.default.post(`${endpoint}?access_token=${accessToken}`, {
-            messages: [{ role: 'user', content: userPrompt }],
-            temperature: 0.1
-        }, { headers: { 'Content-Type': 'application/json' } });
+        const response = await axios_1.default.post(`${endpoint}?access_token=${accessToken}`, { messages: [{ role: 'user', content: userPrompt }], temperature: 0.1 }, { headers: { 'Content-Type': 'application/json' } });
         const data = response.data;
         if (data.error_code) {
             throw new error_1.AIError(`Baidu API Error: ${data.error_msg}`);

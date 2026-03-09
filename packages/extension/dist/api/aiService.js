@@ -8,7 +8,7 @@ const baidu_1 = require("./baidu");
 const error_1 = require("./error");
 const config_1 = require("../config/config");
 async function generateComment(params) {
-    const config = (0, config_1.getExtensionConfig)();
+    const config = await (0, config_1.getExtensionConfig)(); // 加 await
     const provider = (config.aiProvider || types_1.AIServiceProvider.OpenAI);
     switch (provider) {
         case types_1.AIServiceProvider.OpenAI:

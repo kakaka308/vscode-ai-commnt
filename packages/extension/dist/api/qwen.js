@@ -39,7 +39,7 @@ const error_1 = require("./error");
 const config_1 = require("../config/config");
 const shared_1 = require("shared");
 async function generateCommentWithQwen(params) {
-    const config = (0, config_1.getExtensionConfig)();
+    const config = await (0, config_1.getExtensionConfig)();
     const apiKey = config.qwenApiKey;
     const model = config.qwenModel || 'qwen-turbo';
     const endpoint = config.qwenEndpoint || 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
@@ -51,10 +51,7 @@ async function generateCommentWithQwen(params) {
     const { system, user } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
     const userPrompt = `${system}\n\n${user}`;
     try {
-        const response = await axios_1.default.post(endpoint, {
-            model,
-            messages: [{ role: 'user', content: userPrompt }]
-        }, {
+        const response = await axios_1.default.post(endpoint, { model, messages: [{ role: 'user', content: userPrompt }] }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
@@ -78,7 +75,7 @@ async function generateCommentWithQwen(params) {
         if (error instanceof error_1.AIError)
             throw error;
         if (error instanceof axios_1.AxiosError) {
-            const detail = error.response?.data?.message || error.response?.data?.error?.message || error.message;
+            const detail = error.response?.data?.message || error.message;
             const status = error.response?.status ?? 0;
             throw new error_1.AIRequestFailedError(`[${status}] ${detail}`, status);
         }

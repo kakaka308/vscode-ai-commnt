@@ -6,7 +6,7 @@ import { AIError } from './error';
 import { getExtensionConfig } from '../config/config';
 
 export async function generateComment(params: GenerateCommentParams): Promise<AIResponse> {
-  const config = getExtensionConfig();
+  const config = await getExtensionConfig(); // 加 await
   const provider = (config.aiProvider || AIServiceProvider.OpenAI) as AIServiceProvider;
 
   switch (provider) {

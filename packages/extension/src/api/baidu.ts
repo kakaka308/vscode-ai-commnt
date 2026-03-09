@@ -16,21 +16,18 @@ async function getAccessToken(apiKey: string, secretKey: string): Promise<string
   if (cachedToken && Date.now() < tokenExpiresTime) {
     return cachedToken;
   }
-
   const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
   const response = await axios.post(url);
-
   if (response.data.error) {
     throw new AIError(`Baidu Auth Failed: ${response.data.error_description}`);
   }
-
   cachedToken = response.data.access_token;
   tokenExpiresTime = Date.now() + (response.data.expires_in - 60) * 1000;
   return cachedToken!;
 }
 
 export async function generateCommentWithBaidu(params: GenerateCommentParams): Promise<AIResponse> {
-  const config = getExtensionConfig();
+  const config = await getExtensionConfig();
   const apiKey = config.baiduApiKey;
   const secretKey = config.baiduSecretKey;
 
@@ -44,8 +41,6 @@ export async function generateCommentWithBaidu(params: GenerateCommentParams): P
   }
 
   const { code, language, commentStyle, isWholeFile } = params;
-
-  // 统一使用 shared 的 buildPrompt，合并 system+user（文心一言同样不推荐 system role）
   const { system, user } = buildPrompt(
     config.commentMode,
     language,
@@ -58,10 +53,7 @@ export async function generateCommentWithBaidu(params: GenerateCommentParams): P
   try {
     const response = await axios.post(
       `${endpoint}?access_token=${accessToken}`,
-      {
-        messages: [{ role: 'user', content: userPrompt }],
-        temperature: 0.1
-      },
+      { messages: [{ role: 'user', content: userPrompt }], temperature: 0.1 },
       { headers: { 'Content-Type': 'application/json' } }
     );
 
@@ -71,7 +63,6 @@ export async function generateCommentWithBaidu(params: GenerateCommentParams): P
     }
 
     const rawContent: string = data.result;
-
     const comment = config.commentMode === 'concise'
       ? generateConciseComment(cleanConciseResponse(rawContent), isWholeFile ?? false, language)
       : cleanDetailedResponse(rawContent);

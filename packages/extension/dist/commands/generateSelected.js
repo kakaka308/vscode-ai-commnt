@@ -54,24 +54,26 @@ function generateSelectedComment() {
         vscode.window.showErrorMessage('AI Comment: 选中的代码为空！');
         return;
     }
-    if (!(0, config_1.validateConfig)())
-        return;
-    const config = (0, config_1.getExtensionConfig)();
-    const targetLanguage = config.targetLanguage === 'auto'
-        ? editor.document.languageId
-        : config.targetLanguage;
-    const aiParams = {
-        code: selectedCode,
-        language: targetLanguage,
-        commentStyle: config.commentStyle,
-        isWholeFile: false
-    };
     vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: 'AI Comment: 正在生成注释...',
         cancellable: false
     }, async (progress) => {
         try {
+            // validateConfig 和 getExtensionConfig 都改为 async
+            const isValid = await (0, config_1.validateConfig)();
+            if (!isValid)
+                return;
+            const config = await (0, config_1.getExtensionConfig)();
+            const targetLanguage = config.targetLanguage === 'auto'
+                ? editor.document.languageId
+                : config.targetLanguage;
+            const aiParams = {
+                code: selectedCode,
+                language: targetLanguage,
+                commentStyle: config.commentStyle,
+                isWholeFile: false
+            };
             progress.report({ increment: 50 });
             const aiResponse = await (0, aiService_1.generateComment)(aiParams);
             if (!aiResponse.success || !aiResponse.comment.trim()) {
@@ -79,12 +81,10 @@ function generateSelectedComment() {
             }
             await editor.edit((editBuilder) => {
                 if (config.commentMode === 'concise') {
-                    // 简洁模式：在选中代码起始行的行首插入注释，注释和代码之间空一行
                     const insertPosition = new vscode.Position(selection.start.line, 0);
                     editBuilder.insert(insertPosition, aiResponse.comment + '\n');
                 }
                 else {
-                    // 详细模式：AI 返回带注释的完整代码，直接替换选中内容
                     editBuilder.replace(selection, aiResponse.comment);
                 }
             });

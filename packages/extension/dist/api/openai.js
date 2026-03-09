@@ -39,14 +39,14 @@ const error_1 = require("./error");
 const config_1 = require("../config/config");
 const shared_1 = require("shared");
 async function generateCommentWithOpenAI(params) {
-    const config = (0, config_1.getExtensionConfig)();
+    // getExtensionConfig 现在是 async
+    const config = await (0, config_1.getExtensionConfig)();
     const apiKey = config.apiKey;
     const model = config.model || 'gpt-3.5-turbo';
     const endpoint = config.openaiEndpoint || 'https://api.openai.com/v1/chat/completions';
     if (!apiKey)
         throw new error_1.APIKeyMissingError();
     const { code, language, commentStyle, isWholeFile } = params;
-    // 统一使用 shared 的 buildPrompt 构建
     const { system: systemPrompt, user: userPrompt } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
     const requestData = {
         model,
@@ -69,7 +69,6 @@ async function generateCommentWithOpenAI(params) {
             throw new error_1.AIResponseParseError();
         }
         const rawContent = data.choices[0].message.content;
-        // 统一使用 shared 的清洗函数处理响应
         const comment = config.commentMode === 'concise'
             ? (0, shared_1.generateConciseComment)((0, shared_1.cleanConciseResponse)(rawContent), isWholeFile ?? false, language)
             : (0, shared_1.cleanDetailedResponse)(rawContent);

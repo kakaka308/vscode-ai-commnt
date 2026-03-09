@@ -1,7 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { AIServiceProvider } from '../api/types';
+import {
+  getBaseConfig,
+  getAllSecrets,
+  SECRET_KEYS,
+  setSecret,
+  setBaseConfig, // 请确保 config.ts 中导出了这个函数
+} from '../config/config';
 
 let panel: vscode.WebviewPanel | undefined;
 
@@ -11,54 +17,59 @@ export function openConfigPanel(context: vscode.ExtensionContext) {
     return;
   }
 
+  const uiDistUri = vscode.Uri.joinPath(context.extensionUri, 'ui-dist');
+
   panel = vscode.window.createWebviewPanel(
     'aiCommentConfig',
     'AI Comment 设置',
     vscode.ViewColumn.One,
     {
       enableScripts: true,
-      // 允许 Webview 访问 ui/dist 目录下的资源
-      localResourceRoots: [
-        vscode.Uri.joinPath(context.extensionUri, 'ui-dist')
-      ]
+      retainContextWhenHidden: true,
+      localResourceRoots: [uiDistUri]
     }
   );
 
-  panel.webview.html = getWebviewHtml(panel.webview, context);
+  panel.webview.html = getWebviewHtml(panel.webview, uiDistUri);
 
-  // 接收 Vue 页面发来的消息
+  // 关键修改：处理来自前端的消息
   panel.webview.onDidReceiveMessage(
     async (message) => {
+      console.log(`[openConfig] received message: ${message.command}`);
+      
       switch (message.command) {
-        case 'saveConfig': {
-          const config = vscode.workspace.getConfiguration('aiComment');
-          for (const key of Object.keys(message.data)) {
-            await config.update(key, message.data[key], vscode.ConfigurationTarget.Global);
-          }
-          vscode.window.showInformationMessage('AI Comment: 配置已保存！');
-          break;
-        }
         case 'getConfig': {
-          // Vue 页面请求当前配置
-          const config = vscode.workspace.getConfiguration('aiComment');
+          const [base, secrets] = await Promise.all([
+            getBaseConfig(),
+            getAllSecrets(),
+          ]);
           panel?.webview.postMessage({
             command: 'loadConfig',
-            data: {
-              apiKey: config.get('apiKey', ''),
-              model: config.get('model', 'gpt-3.5-turbo'),
-              commentStyle: config.get('commentStyle', 'default'),
-              targetLanguage: config.get('targetLanguage', 'auto'),
-              aiProvider: config.get('aiProvider', AIServiceProvider.OpenAI),
-              commentMode: config.get('commentMode', 'concise'),
-              openaiEndpoint: config.get('openaiEndpoint', ''),
-              qwenApiKey: config.get('qwenApiKey', ''),
-              qwenModel: config.get('qwenModel', 'qwen-turbo'),
-              qwenEndpoint: config.get('qwenEndpoint', ''),
-              baiduApiKey: config.get('baiduApiKey', ''),
-              baiduSecretKey: config.get('baiduSecretKey', ''),
-              baiduModel: config.get('baiduModel', 'ernie-4.0'),
-            }
+            data: { ...base, ...secrets }
           });
+          break;
+        }
+
+        case 'saveConfig': {
+          // 这里是修复的核心：处理保存逻辑
+          const newConfig = message.data;
+          console.log('[openConfig] saving data...', newConfig);
+
+          try {
+            for (const key of Object.keys(newConfig)) {
+              const value = newConfig[key];
+              
+              // 区分 Secret 存储和普通 Config 存储
+              if ((SECRET_KEYS as readonly string[]).includes(key)) {
+                await setSecret(key as any, value);
+              } else {
+                await setBaseConfig(key, value);
+              }
+            }
+            vscode.window.showInformationMessage('AI Comment: 配置已成功保存！');
+          } catch (err: any) {
+            vscode.window.showErrorMessage(`AI Comment: 保存失败: ${err.message}`);
+          }
           break;
         }
       }
@@ -67,19 +78,43 @@ export function openConfigPanel(context: vscode.ExtensionContext) {
     context.subscriptions
   );
 
+  // 初始加载
+  setTimeout(async () => {
+    const [base, secrets] = await Promise.all([
+      getBaseConfig(),
+      getAllSecrets(),
+    ]);
+    panel?.webview.postMessage({
+      command: 'loadConfig',
+      data: { ...base, ...secrets }
+    });
+  }, 500);
+
   panel.onDidDispose(() => { panel = undefined; }, null, context.subscriptions);
 }
 
-function getWebviewHtml(webview: vscode.Webview, context: vscode.ExtensionContext): string {
-  // ui build 产物放在 extension 包根目录的 ui-dist 文件夹下
-  const distPath = vscode.Uri.joinPath(context.extensionUri, 'ui-dist');
-  const htmlPath = path.join(distPath.fsPath, 'index.html');
-
+function getWebviewHtml(webview: vscode.Webview, uiDistUri: vscode.Uri): string {
+  const htmlPath = path.join(uiDistUri.fsPath, 'index.html');
   let html = fs.readFileSync(htmlPath, 'utf-8');
+  html = html.replace(/\s+crossorigin/g, '');
+  const webviewBaseUri = webview.asWebviewUri(uiDistUri).toString();
+  html = html.replace(/__WEBVIEW_BASE__/g, webviewBaseUri);
+  html = html.replace(/(src|href)="\/([^"]+)"/g, `$1="${webviewBaseUri}/$2"`);
 
-  // 将 HTML 中的资源路径替换为 Webview 可访问的 vscode-resource URI
-  const distWebviewUri = webview.asWebviewUri(distPath).toString();
-  html = html.replace(/(src|href)="\.?\/(assets\/[^"]+)"/g, `$1="${distWebviewUri}/$2"`);
+  const nonce = getNonce();
+  html = html.replace(/<script type="module"/g, `<script nonce="${nonce}" type="module"`);
+
+  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:; font-src ${webview.cspSource};">`;
+  html = html.replace('<head>', `<head>${csp}`);
 
   return html;
+}
+
+function getNonce() {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }

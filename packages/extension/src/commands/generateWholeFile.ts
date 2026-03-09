@@ -12,32 +12,11 @@ export function generateWholeFileComment() {
   }
 
   const document = editor.document;
-  if (document.isClosed || (document.isDirty && !document.isUntitled)) {
-    vscode.window.showWarningMessage('AI Comment: 当前文件不可编辑，请保存后重试！');
-    return;
-  }
-
   const fullCode = document.getText();
   if (!fullCode.trim()) {
     vscode.window.showErrorMessage('AI Comment: 当前文件内容为空！');
     return;
   }
-
-  if (!validateConfig()) {
-    return;
-  }
-
-  const config = getExtensionConfig();
-  const targetLanguage = config.targetLanguage === 'auto' 
-    ? document.languageId 
-    : config.targetLanguage;
-
-  const aiParams: GenerateCommentParams = {
-    code: fullCode,
-    language: targetLanguage,
-    commentStyle: config.commentStyle,
-    isWholeFile: true
-  };
 
   vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
@@ -45,21 +24,34 @@ export function generateWholeFileComment() {
     cancellable: false
   }, async (progress) => {
     try {
+      // validateConfig 和 getExtensionConfig 都改为 async
+      const isValid = await validateConfig();
+      if (!isValid) return;
+
+      const config = await getExtensionConfig();
+      const targetLanguage = config.targetLanguage === 'auto'
+        ? document.languageId
+        : config.targetLanguage;
+
+      const aiParams: GenerateCommentParams = {
+        code: fullCode,
+        language: targetLanguage,
+        commentStyle: config.commentStyle,
+        isWholeFile: true
+      };
+
       progress.report({ increment: 50 });
       const aiResponse = await generateComment(aiParams);
 
       if (!aiResponse.success || !aiResponse.comment.trim()) {
-        throw new AIError('AI Comment: 生成的注释为空，请重试！');
+        throw new AIError('生成的注释为空，请重试！');
       }
 
-      // ========== 核心：分模式插入注释 ==========
       await editor.edit((editBuilder) => {
         if (config.commentMode === 'concise') {
-          // 简洁模式：文件开头插入（仅加总结）
           const insertPosition = new vscode.Position(0, 0);
           editBuilder.insert(insertPosition, aiResponse.comment + '\n\n');
         } else {
-          // 详细模式：替换全文件内容（原有逻辑）
           const fullRange = new vscode.Range(
             document.positionAt(0),
             document.positionAt(fullCode.length)

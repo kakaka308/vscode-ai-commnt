@@ -33,36 +33,86 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.SECRET_KEYS = void 0;
+exports.initContext = initContext;
+exports.getSecret = getSecret;
+exports.setSecret = setSecret;
+exports.getAllSecrets = getAllSecrets;
+exports.setSecrets = setSecrets;
+exports.getBaseConfig = getBaseConfig;
+exports.setBaseConfig = setBaseConfig;
 exports.getExtensionConfig = getExtensionConfig;
 exports.validateConfig = validateConfig;
 const vscode = __importStar(require("vscode"));
 const types_1 = require("../api/types");
-// 获取插件配置
-function getExtensionConfig() {
+exports.SECRET_KEYS = [
+    'apiKey',
+    'qwenApiKey',
+    'baiduApiKey',
+    'baiduSecretKey',
+];
+let _context = null;
+function initContext(context) {
+    _context = context;
+}
+function getContext() {
+    if (!_context)
+        throw new Error('Extension context 未初始化，请先调用 initContext()');
+    return _context;
+}
+async function getSecret(key) {
+    const val = await getContext().secrets.get(`aiComment.${key}`);
+    console.log(`[config] getSecret(${key}) =`, val ? `"${'*'.repeat(val.length)}"(len=${val.length})` : 'empty');
+    return val ?? '';
+}
+async function setSecret(key, value) {
+    if (value) {
+        await getContext().secrets.store(`aiComment.${key}`, value);
+        console.log(`[config] setSecret(${key}) stored, len=${value.length}`);
+    }
+    else {
+        await getContext().secrets.delete(`aiComment.${key}`);
+        console.log(`[config] setSecret(${key}) deleted (empty value)`);
+    }
+}
+async function getAllSecrets() {
+    const entries = await Promise.all(exports.SECRET_KEYS.map(async (key) => [key, await getSecret(key)]));
+    return Object.fromEntries(entries);
+}
+async function setSecrets(data) {
+    await Promise.all(exports.SECRET_KEYS
+        .filter((key) => key in data)
+        .map((key) => setSecret(key, data[key] ?? '')));
+}
+function getBaseConfig() {
     const config = vscode.workspace.getConfiguration('aiComment');
     return {
-        // 通用
-        apiKey: config.get('apiKey', ''),
         model: config.get('model', 'gpt-3.5-turbo'),
         commentStyle: config.get('commentStyle', 'default'),
         targetLanguage: config.get('targetLanguage', 'auto'),
         aiProvider: config.get('aiProvider', types_1.AIServiceProvider.OpenAI),
         commentMode: config.get('commentMode', 'concise'),
-        // OpenAI
         openaiEndpoint: config.get('openaiEndpoint', 'https://api.openai.com/v1/chat/completions'),
-        // Qwen (通义千问)
-        qwenApiKey: config.get('qwenApiKey', ''),
         qwenModel: config.get('qwenModel', 'qwen-turbo'),
         qwenEndpoint: config.get('qwenEndpoint', 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'),
-        // Baidu (文心一言)
-        baiduApiKey: config.get('baiduApiKey', ''),
-        baiduSecretKey: config.get('baiduSecretKey', ''),
         baiduModel: config.get('baiduModel', 'ernie-4.0'),
     };
 }
-// 验证配置 (根据当前 Provider 验证)
-function validateConfig() {
-    const config = getExtensionConfig();
+async function setBaseConfig(key, value) {
+    const config = vscode.workspace.getConfiguration('aiComment');
+    await config.update(key, value, vscode.ConfigurationTarget.Global);
+}
+async function getExtensionConfig() {
+    const [base, secrets] = await Promise.all([
+        getBaseConfig(),
+        getAllSecrets(),
+    ]);
+    const result = { ...base, ...secrets };
+    console.log('[config] getExtensionConfig aiProvider:', result.aiProvider, 'qwenApiKey len:', result.qwenApiKey.length);
+    return result;
+}
+async function validateConfig() {
+    const config = await getExtensionConfig();
     if (config.aiProvider === types_1.AIServiceProvider.OpenAI && !config.apiKey) {
         vscode.window.showErrorMessage('AI Comment: 请配置 OpenAI API Key');
         return false;

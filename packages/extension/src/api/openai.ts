@@ -10,7 +10,8 @@ import {
 } from 'shared';
 
 export async function generateCommentWithOpenAI(params: GenerateCommentParams): Promise<AIResponse> {
-  const config = getExtensionConfig();
+  // getExtensionConfig 现在是 async
+  const config = await getExtensionConfig();
   const apiKey = config.apiKey;
   const model = config.model || 'gpt-3.5-turbo';
   const endpoint = config.openaiEndpoint || 'https://api.openai.com/v1/chat/completions';
@@ -19,7 +20,6 @@ export async function generateCommentWithOpenAI(params: GenerateCommentParams): 
 
   const { code, language, commentStyle, isWholeFile } = params;
 
-  // 统一使用 shared 的 buildPrompt 构建
   const { system: systemPrompt, user: userPrompt } = buildPrompt(
     config.commentMode,
     language,
@@ -52,8 +52,6 @@ export async function generateCommentWithOpenAI(params: GenerateCommentParams): 
     }
 
     const rawContent: string = data.choices[0].message.content;
-
-    // 统一使用 shared 的清洗函数处理响应
     const comment = config.commentMode === 'concise'
       ? generateConciseComment(cleanConciseResponse(rawContent), isWholeFile ?? false, language)
       : cleanDetailedResponse(rawContent);

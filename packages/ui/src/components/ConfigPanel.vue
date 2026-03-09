@@ -118,13 +118,14 @@ function updateConfig(val: AICommentConfig) {
           class="save-btn"
           :class="{ saving: isSaving, success: saveSuccess }"
           :disabled="isSaving"
-          @click="handleSave"
+          @click="handleSave" onclick="alert('native click works')"
         >
           <span v-if="isSaving">保存中...</span>
           <span v-else-if="saveSuccess">✓ 已保存</span>
           <span v-else>💾 保存配置</span>
         </button>
       </div>
+
     </template>
   </div>
 </template>

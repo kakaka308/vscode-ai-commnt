@@ -38,20 +38,22 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const generateSelected_1 = require("./commands/generateSelected");
 const generateWholeFile_1 = require("./commands/generateWholeFile");
-const openConfig_1 = require("./commands/openConfig"); // 导入新命令
+const openConfig_1 = require("./commands/openConfig");
+const config_1 = require("./config/config"); // 新增导入
 function activate(context) {
     console.log('AI Comment Generator activated!');
-    // 1. 注册「选中代码注释」命令
+    // 初始化 context，让 config.ts 可以访问 SecretStorage
+    (0, config_1.initContext)(context);
+    // 注册「选中代码注释」命令
     context.subscriptions.push(vscode.commands.registerCommand('ai-comment.generateSelected', () => (0, generateSelected_1.generateSelectedComment)()));
-    // 2. 注册「全文件注释」命令
+    // 注册「全文件注释」命令
     context.subscriptions.push(vscode.commands.registerCommand('ai-comment.generateWholeFile', () => (0, generateWholeFile_1.generateWholeFileComment)()));
-    // 3. 注册「打开设置面板」命令
+    // 注册「打开设置面板」命令
     context.subscriptions.push(vscode.commands.registerCommand('ai-comment.openConfig', () => (0, openConfig_1.openConfigPanel)(context)));
-    // 监听配置变更提示
+    // 监听配置变更
     vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('aiComment')) {
-            // 可以在这里做一些自动刷新的逻辑，目前仅提示
-            // vscode.window.showInformationMessage('AI Comment config updated!');
+            // 可以在这里做一些自动刷新的逻辑
         }
     });
 }
