@@ -60,8 +60,10 @@ function generateSelectedComment() {
     vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: 'AI Comment: 正在生成注释...',
-        cancellable: false
-    }, async () => {
+        cancellable: true
+    }, async (progress, token) => {
+        const abortController = new AbortController();
+        token.onCancellationRequested(() => abortController.abort());
         try {
             const isValid = await (0, config_1.validateConfig)();
             if (!isValid)
@@ -77,10 +79,9 @@ function generateSelectedComment() {
                 isWholeFile: false
             };
             if (config.commentMode === 'detailed') {
-                await streamToEditor(editor, selection, config, params);
+                await streamReplaceSelection(editor, selection, config, params, abortController.signal);
             }
             else {
-                // 简洁模式：普通请求，在选中内容上方插入一行注释
                 const fn = getGenerateFn(config.aiProvider);
                 const result = await fn(params);
                 await editor.edit(editBuilder => {
@@ -88,9 +89,13 @@ function generateSelectedComment() {
                     editBuilder.insert(pos, result.comment + '\n');
                 });
             }
-            vscode.window.showInformationMessage('AI Comment: 注释生成成功！');
+            if (!abortController.signal.aborted) {
+                vscode.window.showInformationMessage('AI Comment: 注释生成成功！');
+            }
         }
         catch (error) {
+            if (abortController.signal.aborted)
+                return;
             if (error instanceof error_1.AIError) {
                 vscode.window.showErrorMessage(`AI Comment: ${error.message}`);
             }
@@ -100,23 +105,37 @@ function generateSelectedComment() {
         }
     });
 }
-async function streamToEditor(editor, selection, config, params) {
-    // 详细模式：AI 返回「带注释的完整代码」替换选中内容
-    // 策略：先收集所有流式内容，再一次性替换选中区域
-    // 原因：流式边写边改会导致 selection 范围持续变化，位置计算错乱
-    let fullText = '';
-    const onChunk = (chunk) => {
-        fullText += chunk;
+async function streamReplaceSelection(editor, selection, config, params, signal) {
+    const insertLine = selection.start.line;
+    const insertPos = new vscode.Position(insertLine, 0);
+    let currentPos = insertPos;
+    let initialized = false;
+    const onChunk = async (chunk) => {
+        if (signal.aborted)
+            return;
+        if (!initialized) {
+            await editor.edit(editBuilder => {
+                editBuilder.delete(selection);
+                editBuilder.insert(insertPos, chunk);
+            });
+            initialized = true;
+        }
+        else {
+            await editor.edit(editBuilder => {
+                editBuilder.insert(currentPos, chunk);
+            });
+        }
+        // 根据本次写入内容更新 currentPos
+        const lines = chunk.split('\n');
+        if (lines.length > 1) {
+            currentPos = new vscode.Position(currentPos.line + lines.length - 1, lines[lines.length - 1].length);
+        }
+        else {
+            currentPos = new vscode.Position(currentPos.line, currentPos.character + chunk.length);
+        }
     };
     const fn = getGenerateFn(config.aiProvider);
     await fn(params, onChunk);
-    if (!fullText.trim()) {
-        throw new error_1.AIError('生成的注释为空，请重试！');
-    }
-    // 全部收完后一次性替换选中内容（不会有重复问题）
-    await editor.edit(editBuilder => {
-        editBuilder.replace(selection, fullText);
-    });
 }
 function getGenerateFn(provider) {
     switch (provider) {
