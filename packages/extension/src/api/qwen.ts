@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { GenerateCommentParams, AIResponse, StreamChunkCallback } from './types';
 import { AIRequestFailedError, AIResponseParseError, AIError } from './error';
 import { getExtensionConfig } from '../config/config';
+import { withRetry } from './retry';
 import {
   buildPrompt,
   generateConciseComment,
@@ -26,26 +27,26 @@ export async function generateCommentWithQwen(
   const { system, user } = buildPrompt(
     config.commentMode, language, code, commentStyle, isWholeFile ?? false
   );
-  // Qwen 部分模型不支持 system role，合并为单条 user 消息
   const userPrompt = `${system}\n\n${user}`;
 
-  // 详细模式 + 有回调 → 流式
   if (onChunk && config.commentMode === 'detailed') {
     return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk);
   }
 
-  // 普通请求
+  // 普通请求接入 withRetry
   try {
-    const response = await axios.post(
-      endpoint,
-      { model, messages: [{ role: 'user', content: userPrompt }] },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
+    const response = await withRetry(() =>
+      axios.post(
+        endpoint,
+        { model, messages: [{ role: 'user', content: userPrompt }] },
+        {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      )
     );
 
     const data = response.data;
@@ -81,21 +82,24 @@ async function qwenStreamRequest(
   userPrompt: string,
   onChunk: StreamChunkCallback
 ): Promise<AIResponse> {
-  const response = await axios.post(
-    endpoint,
-    {
-      model,
-      messages: [{ role: 'user', content: userPrompt }],
-      stream: true
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+  // 流式请求也接入 withRetry
+  const response = await withRetry(() =>
+    axios.post(
+      endpoint,
+      {
+        model,
+        messages: [{ role: 'user', content: userPrompt }],
+        stream: true
       },
-      responseType: 'stream',
-      timeout: 60000
-    }
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        responseType: 'stream',
+        timeout: 60000
+      }
+    )
   );
 
   return new Promise((resolve, reject) => {
@@ -119,7 +123,6 @@ async function qwenStreamRequest(
 
         try {
           const parsed = JSON.parse(jsonStr);
-          // Qwen 兼容 OpenAI 格式
           const delta = parsed.choices?.[0]?.delta?.content ?? '';
           if (delta) {
             fullText += delta;

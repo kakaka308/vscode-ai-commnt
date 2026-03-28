@@ -2,6 +2,7 @@ import axios from 'axios';
 import { GenerateCommentParams, AIResponse, StreamChunkCallback } from './types';
 import { AIError } from './error';
 import { getExtensionConfig } from '../config/config';
+import { withRetry } from './retry';
 import {
   buildPrompt,
   generateConciseComment,
@@ -23,7 +24,6 @@ async function getAccessToken(apiKey: string, secretKey: string): Promise<string
     throw new AIError(`Baidu Auth Failed: ${response.data.error_description}`);
   }
   cachedToken = response.data.access_token;
-  // 提前 60 秒过期，避免 token 在请求途中失效
   tokenExpiresTime = Date.now() + (response.data.expires_in - 60) * 1000;
   return cachedToken!;
 }
@@ -54,20 +54,21 @@ export async function generateCommentWithBaidu(
   );
   const userPrompt = `${system}\n\n${user}`;
 
-  // 详细模式 + 有回调 → 流式
   if (onChunk && config.commentMode === 'detailed') {
     return baiduStreamRequest(endpoint, accessToken, userPrompt, onChunk);
   }
 
-  // 普通请求
+  // 普通请求接入 withRetry
   try {
-    const response = await axios.post(
-      `${endpoint}?access_token=${accessToken}`,
-      {
-        messages: [{ role: 'user', content: userPrompt }],
-        temperature: 0.1
-      },
-      { headers: { 'Content-Type': 'application/json' } }
+    const response = await withRetry(() =>
+      axios.post(
+        `${endpoint}?access_token=${accessToken}`,
+        {
+          messages: [{ role: 'user', content: userPrompt }],
+          temperature: 0.1
+        },
+        { headers: { 'Content-Type': 'application/json' } }
+      )
     );
 
     const data = response.data;
@@ -94,18 +95,21 @@ async function baiduStreamRequest(
   userPrompt: string,
   onChunk: StreamChunkCallback
 ): Promise<AIResponse> {
-  const response = await axios.post(
-    `${endpoint}?access_token=${accessToken}`,
-    {
-      messages: [{ role: 'user', content: userPrompt }],
-      temperature: 0.1,
-      stream: true  // 文心一言开启流式
-    },
-    {
-      headers: { 'Content-Type': 'application/json' },
-      responseType: 'stream',
-      timeout: 60000
-    }
+  // 流式请求也接入 withRetry
+  const response = await withRetry(() =>
+    axios.post(
+      `${endpoint}?access_token=${accessToken}`,
+      {
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.1,
+        stream: true
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        responseType: 'stream',
+        timeout: 60000
+      }
+    )
   );
 
   return new Promise((resolve, reject) => {
@@ -137,7 +141,6 @@ async function baiduStreamRequest(
             onChunk(delta);
           }
 
-          // 文心一言用 is_end 标记结束，不用 [DONE]
           if (parsed.is_end) {
             resolve({ success: true, comment: fullText });
           }

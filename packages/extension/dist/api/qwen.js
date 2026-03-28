@@ -37,6 +37,7 @@ exports.generateCommentWithQwen = generateCommentWithQwen;
 const axios_1 = __importStar(require("axios"));
 const error_1 = require("./error");
 const config_1 = require("../config/config");
+const retry_1 = require("./retry");
 const shared_1 = require("shared");
 async function generateCommentWithQwen(params, onChunk) {
     const config = await (0, config_1.getExtensionConfig)();
@@ -49,21 +50,19 @@ async function generateCommentWithQwen(params, onChunk) {
     if (!code?.trim())
         throw new error_1.AIError('代码内容为空，无法生成注释');
     const { system, user } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
-    // Qwen 部分模型不支持 system role，合并为单条 user 消息
     const userPrompt = `${system}\n\n${user}`;
-    // 详细模式 + 有回调 → 流式
     if (onChunk && config.commentMode === 'detailed') {
         return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk);
     }
-    // 普通请求
+    // 普通请求接入 withRetry
     try {
-        const response = await axios_1.default.post(endpoint, { model, messages: [{ role: 'user', content: userPrompt }] }, {
+        const response = await (0, retry_1.withRetry)(() => axios_1.default.post(endpoint, { model, messages: [{ role: 'user', content: userPrompt }] }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
             timeout: 30000
-        });
+        }));
         const data = response.data;
         if (data?.code && data.code !== 'Success') {
             throw new error_1.AIError(`Qwen API Error: [${data.code}] ${data.message}`);
@@ -89,7 +88,8 @@ async function generateCommentWithQwen(params, onChunk) {
     }
 }
 async function qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk) {
-    const response = await axios_1.default.post(endpoint, {
+    // 流式请求也接入 withRetry
+    const response = await (0, retry_1.withRetry)(() => axios_1.default.post(endpoint, {
         model,
         messages: [{ role: 'user', content: userPrompt }],
         stream: true
@@ -100,7 +100,7 @@ async function qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk) {
         },
         responseType: 'stream',
         timeout: 60000
-    });
+    }));
     return new Promise((resolve, reject) => {
         let fullText = '';
         let buffer = '';
@@ -119,7 +119,6 @@ async function qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk) {
                 }
                 try {
                     const parsed = JSON.parse(jsonStr);
-                    // Qwen 兼容 OpenAI 格式
                     const delta = parsed.choices?.[0]?.delta?.content ?? '';
                     if (delta) {
                         fullText += delta;
