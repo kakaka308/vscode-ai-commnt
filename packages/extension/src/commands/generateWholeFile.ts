@@ -48,8 +48,9 @@ export function generateWholeFileComment() {
         await streamWholeFile(editor, document, fullCode, config, params, abortController.signal);
       } else {
         const fn = getGenerateFn(config.aiProvider as AIServiceProvider);
-        const result = await fn(params);
+        const result = await fn(params, undefined, abortController.signal);
         await editor.edit(editBuilder => {
+          // 简洁模式：直接在顶部插入
           editBuilder.insert(new vscode.Position(0, 0), result.comment + '\n\n');
         });
       }
@@ -77,32 +78,40 @@ async function streamWholeFile(
   signal: AbortSignal
 ) {
   let initialized = false;
+  
+  // 【新增】编辑队列：确保流式片段按顺序写入，互不干扰
+  let editQueue = Promise.resolve();
 
   const onChunk: StreamChunkCallback = async (chunk: string) => {
     if (signal.aborted) return;
 
-    if (!initialized) {
-      const fullRange = new vscode.Range(
-        document.positionAt(0),
-        document.positionAt(originalCode.length)
-      );
+    // 将编辑操作排队执行
+    editQueue = editQueue.then(async () => {
       await editor.edit(editBuilder => {
-        editBuilder.replace(fullRange, chunk);
-      });
-      initialized = true;
-    } else {
-      // 全文件场景直接读文档末尾，比追踪 currentPos 更可靠
-      const lastLine = document.lineCount - 1;
-      const lastChar = document.lineAt(lastLine).text.length;
-      const endPos = new vscode.Position(lastLine, lastChar);
-      await editor.edit(editBuilder => {
-        editBuilder.insert(endPos, chunk);
-      });
-    }
+        if (!initialized) {
+          // 第一次：用第一块内容替换整个文件的原始代码
+          const fullRange = new vscode.Range(
+            document.positionAt(0),
+            document.positionAt(document.getText().length)
+          );
+          editBuilder.replace(fullRange, chunk);
+          initialized = true;
+        } else {
+          // 后续：动态获取当前文档的最末尾位置并插入
+          const lastLine = document.lineCount - 1;
+          const lastChar = document.lineAt(lastLine).text.length;
+          const endPos = new vscode.Position(lastLine, lastChar);
+          editBuilder.insert(endPos, chunk);
+        }
+      }, { undoStopBefore: false, undoStopAfter: false });
+    });
+
+    // 必须等待队列处理完该 chunk，再接收下一个
+    await editQueue;
   };
 
   const fn = getGenerateFn(config.aiProvider as AIServiceProvider);
-  await fn(params, onChunk);
+  await fn(params, onChunk, signal);
 
   // 用户中途取消：恢复原始内容
   if (signal.aborted && initialized) {
@@ -116,7 +125,11 @@ async function streamWholeFile(
   }
 }
 
-type GenerateFn = (params: GenerateCommentParams, onChunk?: StreamChunkCallback) => Promise<any>;
+type GenerateFn = (
+  params: GenerateCommentParams,
+  onChunk?: StreamChunkCallback,
+  signal?: AbortSignal
+) => Promise<any>;
 
 function getGenerateFn(provider: AIServiceProvider): GenerateFn {
   switch (provider) {

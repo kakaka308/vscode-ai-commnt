@@ -12,7 +12,8 @@ import {
 
 export async function generateCommentWithQwen(
   params: GenerateCommentParams,
-  onChunk?: StreamChunkCallback
+  onChunk?: StreamChunkCallback,
+  signal?: AbortSignal       // ← 新增
 ): Promise<AIResponse> {
   const config = await getExtensionConfig();
   const apiKey = config.qwenApiKey;
@@ -30,13 +31,12 @@ export async function generateCommentWithQwen(
   const userPrompt = `${system}\n\n${user}`;
 
   if (onChunk && config.commentMode === 'detailed') {
-    return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk);
+    return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk, signal);
   }
 
-  // 普通请求接入 withRetry
   try {
-    const response = await withRetry(() =>
-      axios.post(
+    const response = await withRetry(
+      () => axios.post(
         endpoint,
         { model, messages: [{ role: 'user', content: userPrompt }] },
         {
@@ -46,7 +46,8 @@ export async function generateCommentWithQwen(
           },
           timeout: 30000
         }
-      )
+      ),
+      { signal }             // ← 传入 signal
     );
 
     const data = response.data;
@@ -80,16 +81,17 @@ async function qwenStreamRequest(
   apiKey: string,
   model: string,
   userPrompt: string,
-  onChunk: StreamChunkCallback
+  onChunk: StreamChunkCallback,
+  signal?: AbortSignal       // ← 新增
 ): Promise<AIResponse> {
-  // 流式请求也接入 withRetry
-  const response = await withRetry(() =>
-    axios.post(
+  const response = await withRetry(
+    () => axios.post(
       endpoint,
       {
         model,
         messages: [{ role: 'user', content: userPrompt }],
-        stream: true
+        stream: true,
+        max_tokens: 4096
       },
       {
         headers: {
@@ -97,16 +99,22 @@ async function qwenStreamRequest(
           'Content-Type': 'application/json'
         },
         responseType: 'stream',
-        timeout: 60000
+        timeout: 0
       }
-    )
+    ),
+    { signal }               // ← 传入 signal
   );
 
   return new Promise((resolve, reject) => {
     let fullText = '';
     let buffer = '';
 
+    signal?.addEventListener('abort', () => {
+      reject(new Error('用户已取消'));
+    });
+
     response.data.on('data', (chunk: Buffer) => {
+      if (signal?.aborted) return;
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';

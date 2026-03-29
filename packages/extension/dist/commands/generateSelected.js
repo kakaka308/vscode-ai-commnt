@@ -79,14 +79,13 @@ function generateSelectedComment() {
                 isWholeFile: false
             };
             if (config.commentMode === 'detailed') {
-                await streamReplaceSelection(editor, selection, config, params, abortController.signal);
+                await streamSelected(editor, editor.document, selection, config, params, abortController.signal);
             }
             else {
                 const fn = getGenerateFn(config.aiProvider);
-                const result = await fn(params);
+                const result = await fn(params, undefined, abortController.signal);
                 await editor.edit(editBuilder => {
-                    const pos = new vscode.Position(selection.start.line, 0);
-                    editBuilder.insert(pos, result.comment + '\n');
+                    editBuilder.insert(selection.start, result.comment + '\n');
                 });
             }
             if (!abortController.signal.aborted) {
@@ -96,46 +95,48 @@ function generateSelectedComment() {
         catch (error) {
             if (abortController.signal.aborted)
                 return;
-            if (error instanceof error_1.AIError) {
-                vscode.window.showErrorMessage(`AI Comment: ${error.message}`);
-            }
-            else {
-                vscode.window.showErrorMessage(`AI Comment: 生成失败 → ${error.message}`);
-            }
+            vscode.window.showErrorMessage(`AI Comment: ${error.message}`);
         }
     });
 }
-async function streamReplaceSelection(editor, selection, config, params, signal) {
+async function streamSelected(editor, document, selection, config, params, signal) {
     const insertLine = selection.start.line;
     const insertPos = new vscode.Position(insertLine, 0);
     let currentPos = insertPos;
     let initialized = false;
+    // 【新增】编辑队列，确保流式写入有序
+    let editQueue = Promise.resolve();
     const onChunk = async (chunk) => {
         if (signal.aborted)
             return;
-        if (!initialized) {
+        // 将编辑操作排队
+        editQueue = editQueue.then(async () => {
             await editor.edit(editBuilder => {
-                editBuilder.delete(selection);
-                editBuilder.insert(insertPos, chunk);
-            });
-            initialized = true;
-        }
-        else {
-            await editor.edit(editBuilder => {
-                editBuilder.insert(currentPos, chunk);
-            });
-        }
-        // 根据本次写入内容更新 currentPos
-        const lines = chunk.split('\n');
-        if (lines.length > 1) {
-            currentPos = new vscode.Position(currentPos.line + lines.length - 1, lines[lines.length - 1].length);
-        }
-        else {
-            currentPos = new vscode.Position(currentPos.line, currentPos.character + chunk.length);
-        }
+                if (!initialized) {
+                    // 第一次：替换掉选中的原始代码（或在上方插入）
+                    // 如果你的逻辑是“替换”，用 delete；如果是“上方插入”，删掉 delete 行
+                    editBuilder.delete(selection);
+                    editBuilder.insert(insertPos, chunk);
+                    initialized = true;
+                }
+                else {
+                    // 后续：在当前偏移位置追加
+                    editBuilder.insert(currentPos, chunk);
+                }
+            }, { undoStopBefore: false, undoStopAfter: false });
+            // 【核心】计算下一次插入的准确位置
+            const lines = chunk.split('\n');
+            if (lines.length > 1) {
+                currentPos = new vscode.Position(currentPos.line + lines.length - 1, lines[lines.length - 1].length);
+            }
+            else {
+                currentPos = new vscode.Position(currentPos.line, currentPos.character + chunk.length);
+            }
+        });
+        await editQueue;
     };
     const fn = getGenerateFn(config.aiProvider);
-    await fn(params, onChunk);
+    await fn(params, onChunk, signal);
 }
 function getGenerateFn(provider) {
     switch (provider) {

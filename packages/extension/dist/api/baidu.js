@@ -9,7 +9,6 @@ const error_1 = require("./error");
 const config_1 = require("../config/config");
 const retry_1 = require("./retry");
 const shared_1 = require("shared");
-// token 缓存
 let cachedToken = null;
 let tokenExpiresTime = 0;
 async function getAccessToken(apiKey, secretKey) {
@@ -31,7 +30,8 @@ function getEndpoint(baiduModel) {
     }
     return 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions';
 }
-async function generateCommentWithBaidu(params, onChunk) {
+async function generateCommentWithBaidu(params, onChunk, signal // ← 新增
+) {
     const config = await (0, config_1.getExtensionConfig)();
     const apiKey = config.baiduApiKey;
     const secretKey = config.baiduSecretKey;
@@ -43,14 +43,14 @@ async function generateCommentWithBaidu(params, onChunk) {
     const { system, user } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
     const userPrompt = `${system}\n\n${user}`;
     if (onChunk && config.commentMode === 'detailed') {
-        return baiduStreamRequest(endpoint, accessToken, userPrompt, onChunk);
+        return baiduStreamRequest(endpoint, accessToken, userPrompt, onChunk, signal);
     }
-    // 普通请求接入 withRetry
     try {
         const response = await (0, retry_1.withRetry)(() => axios_1.default.post(`${endpoint}?access_token=${accessToken}`, {
             messages: [{ role: 'user', content: userPrompt }],
             temperature: 0.1
-        }, { headers: { 'Content-Type': 'application/json' } }));
+        }, { headers: { 'Content-Type': 'application/json' } }), { signal } // ← 传入 signal
+        );
         const data = response.data;
         if (data.error_code) {
             throw new error_1.AIError(`Baidu API Error: ${data.error_msg}`);
@@ -67,21 +67,28 @@ async function generateCommentWithBaidu(params, onChunk) {
         throw new error_1.AIError(`Baidu Request Error: ${error.message}`);
     }
 }
-async function baiduStreamRequest(endpoint, accessToken, userPrompt, onChunk) {
-    // 流式请求也接入 withRetry
+async function baiduStreamRequest(endpoint, accessToken, userPrompt, onChunk, signal // ← 新增
+) {
     const response = await (0, retry_1.withRetry)(() => axios_1.default.post(`${endpoint}?access_token=${accessToken}`, {
         messages: [{ role: 'user', content: userPrompt }],
         temperature: 0.1,
+        max_output_tokens: 4096,
         stream: true
     }, {
         headers: { 'Content-Type': 'application/json' },
         responseType: 'stream',
-        timeout: 60000
-    }));
+        timeout: 0
+    }), { signal } // ← 传入 signal
+    );
     return new Promise((resolve, reject) => {
         let fullText = '';
         let buffer = '';
+        signal?.addEventListener('abort', () => {
+            reject(new Error('用户已取消'));
+        });
         response.data.on('data', (chunk) => {
+            if (signal?.aborted)
+                return;
             buffer += chunk.toString();
             const lines = buffer.split('\n');
             buffer = lines.pop() ?? '';

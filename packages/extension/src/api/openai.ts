@@ -2,13 +2,14 @@ import axios from 'axios';
 import { getExtensionConfig } from '../config/config';
 import { buildPrompt, cleanDetailedResponse,
          cleanConciseResponse, generateConciseComment } from 'shared';
-import { APIKeyMissingError, AIRequestFailedError } from './error';
+import { APIKeyMissingError } from './error';
 import { withRetry } from './retry';
 import type { GenerateCommentParams, AIResponse, StreamChunkCallback } from './types';
 
 export async function generateCommentWithOpenAI(
   params: GenerateCommentParams,
-  onChunk?: StreamChunkCallback
+  onChunk?: StreamChunkCallback,
+  signal?: AbortSignal       // ← 新增
 ): Promise<AIResponse> {
   const config = await getExtensionConfig();
   const apiKey = config.apiKey;
@@ -20,12 +21,11 @@ export async function generateCommentWithOpenAI(
   );
 
   if (onChunk && config.commentMode === 'detailed') {
-    return streamRequest(config.openaiEndpoint, apiKey, config.model, system, user, onChunk);
+    return streamRequest(config.openaiEndpoint, apiKey, config.model, system, user, onChunk, signal);
   }
 
-  // 普通请求接入 withRetry
-  const response = await withRetry(() =>
-    axios.post(config.openaiEndpoint, {
+  const response = await withRetry(
+    () => axios.post(config.openaiEndpoint, {
       model: config.model,
       messages: [
         { role: 'system', content: system },
@@ -35,7 +35,8 @@ export async function generateCommentWithOpenAI(
     }, {
       headers: { 'Authorization': `Bearer ${apiKey}` },
       timeout: 30000
-    })
+    }),
+    { signal }               // ← 传入 signal
   );
 
   const raw: string = response.data.choices[0].message.content;
@@ -52,30 +53,38 @@ async function streamRequest(
   model: string,
   system: string,
   user: string,
-  onChunk: StreamChunkCallback
+  onChunk: StreamChunkCallback,
+  signal?: AbortSignal       // ← 新增
 ): Promise<AIResponse> {
-  // 流式请求也接入 withRetry，连接失败时重试
-  const response = await withRetry(() =>
-    axios.post(endpoint, {
+  const response = await withRetry(
+    () => axios.post(endpoint, {
       model,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user }
       ],
       stream: true,
-      temperature: 0.2
+      temperature: 0.2,
+      max_tokens: 4096
     }, {
       headers: { 'Authorization': `Bearer ${apiKey}` },
       responseType: 'stream',
-      timeout: 60000
-    })
+      timeout: 0
+    }),
+    { signal }               // ← 传入 signal
   );
 
   return new Promise((resolve, reject) => {
     let fullText = '';
     let buffer = '';
 
+    // 用户取消时中断流
+    signal?.addEventListener('abort', () => {
+      reject(new Error('用户已取消'));
+    });
+
     response.data.on('data', (chunk: Buffer) => {
+      if (signal?.aborted) return;
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';

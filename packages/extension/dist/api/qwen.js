@@ -39,7 +39,8 @@ const error_1 = require("./error");
 const config_1 = require("../config/config");
 const retry_1 = require("./retry");
 const shared_1 = require("shared");
-async function generateCommentWithQwen(params, onChunk) {
+async function generateCommentWithQwen(params, onChunk, signal // ← 新增
+) {
     const config = await (0, config_1.getExtensionConfig)();
     const apiKey = config.qwenApiKey;
     const model = config.qwenModel || 'qwen-turbo';
@@ -52,9 +53,8 @@ async function generateCommentWithQwen(params, onChunk) {
     const { system, user } = (0, shared_1.buildPrompt)(config.commentMode, language, code, commentStyle, isWholeFile ?? false);
     const userPrompt = `${system}\n\n${user}`;
     if (onChunk && config.commentMode === 'detailed') {
-        return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk);
+        return qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk, signal);
     }
-    // 普通请求接入 withRetry
     try {
         const response = await (0, retry_1.withRetry)(() => axios_1.default.post(endpoint, { model, messages: [{ role: 'user', content: userPrompt }] }, {
             headers: {
@@ -62,7 +62,8 @@ async function generateCommentWithQwen(params, onChunk) {
                 'Content-Type': 'application/json'
             },
             timeout: 30000
-        }));
+        }), { signal } // ← 传入 signal
+        );
         const data = response.data;
         if (data?.code && data.code !== 'Success') {
             throw new error_1.AIError(`Qwen API Error: [${data.code}] ${data.message}`);
@@ -87,24 +88,31 @@ async function generateCommentWithQwen(params, onChunk) {
         throw new error_1.AIError(`Qwen API Error: ${error.message}`);
     }
 }
-async function qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk) {
-    // 流式请求也接入 withRetry
+async function qwenStreamRequest(endpoint, apiKey, model, userPrompt, onChunk, signal // ← 新增
+) {
     const response = await (0, retry_1.withRetry)(() => axios_1.default.post(endpoint, {
         model,
         messages: [{ role: 'user', content: userPrompt }],
-        stream: true
+        stream: true,
+        max_tokens: 4096
     }, {
         headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
         },
         responseType: 'stream',
-        timeout: 60000
-    }));
+        timeout: 0
+    }), { signal } // ← 传入 signal
+    );
     return new Promise((resolve, reject) => {
         let fullText = '';
         let buffer = '';
+        signal?.addEventListener('abort', () => {
+            reject(new Error('用户已取消'));
+        });
         response.data.on('data', (chunk) => {
+            if (signal?.aborted)
+                return;
             buffer += chunk.toString();
             const lines = buffer.split('\n');
             buffer = lines.pop() ?? '';
